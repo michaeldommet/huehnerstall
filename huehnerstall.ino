@@ -1,70 +1,93 @@
-
 #include <Wire.h>
 
-// Define what pins are used
-const int DoorDownMotorPin = 2; // wind motor down
-const int DoorUpMotorPin = 3;    // wind motor up
-bool DoorOpen = false;
+// Define constants
+const int DOOR_DOWN_MOTOR_PIN = 2;    // Wind motor down
+const int DOOR_UP_MOTOR_PIN = 3;      // Wind motor up
+const int LIGHT_SENSOR_PIN = A1;      // Light sensor pin
+const int BRIGHTNESS_HIGH_THRESHOLD = 400;  // Threshold for raising door
+const int BRIGHTNESS_LOW_THRESHOLD = 100;   // Threshold for lowering door
+const int DOOR_MOVEMENT_DELAY = 12000;      // Time required for door movement
+const int SENSOR_READ_DELAY = 2000;         // Delay between sensor readings
+const int SERIAL_BAUD_RATE = 9600;          // Serial communication speed
 
-// the setup function runs once when you press reset or power the board
-void setup()
-{
-    // Set the mode the pins will operate in.
-    Serial.begin(9600);
-    pinMode(DoorUpMotorPin, OUTPUT);
-    pinMode(DoorDownMotorPin, OUTPUT);
-    delay(3000);
-}
+// Door state tracking
+bool isDoorOpen = true;
 
-// the loop function runs over and over again until power down or reset
-void loop()
-{
-    int brightens = analogRead(A1);
-    delay(2000);
-    Serial.println(brightens);
-    if (brightens > 400 && DoorOpen == false)
-    {
-        Serial.println("Door should be up");
-        raiseDoor();
-        stopDoor();
-        DoorOpen = true;
-     
-    }
-    else if (brightens < 300  && DoorOpen == true)
-    {
-        Serial.println("Door should be down");
-        lowerDoor();
-        stopDoor();
-        DoorOpen = false;
-    }
-    else {
-        Serial.println("I am not doing anything");
-    }
-
+void setup() {
+    // Initialize serial communication
+    Serial.begin(SERIAL_BAUD_RATE);
     
+    // Set pin modes
+    pinMode(DOOR_UP_MOTOR_PIN, OUTPUT);
+    pinMode(DOOR_DOWN_MOTOR_PIN, OUTPUT);
+    
+    // Ensure door is stopped at startup
+    stopDoor();
+    
+    Serial.println("Door control system initialized");
 }
 
-// Wind the Door Up
-void raiseDoor()
-{
-    digitalWrite(DoorUpMotorPin, HIGH);
-    digitalWrite(DoorDownMotorPin, LOW);
-    Serial.println("Door Raising");
-    delay(12000);
+void loop() {
+    // Read brightness value from sensor
+    int brightness = analogRead(LIGHT_SENSOR_PIN);
+    Serial.print("Current brightness: ");
+    Serial.println(brightness);
+    
+    // Check if door needs to be opened (bright and door is closed)
+    if (brightness > BRIGHTNESS_HIGH_THRESHOLD && !isDoorOpen) {
+        Serial.println("Bright conditions detected - opening door");
+        operateDoor(true);
+        isDoorOpen = true;
+    } 
+    // Check if door needs to be closed (dark and door is open)
+    else if (brightness < BRIGHTNESS_LOW_THRESHOLD && isDoorOpen) {
+        Serial.println("Low light conditions detected - confirming reading...");
+        delay(SENSOR_READ_DELAY);  // Double-check before closing
+        
+        // Read brightness again to confirm it's still dark
+        brightness = analogRead(LIGHT_SENSOR_PIN);
+        if (brightness < BRIGHTNESS_LOW_THRESHOLD) {
+            Serial.println("Confirmed low light - closing door");
+            operateDoor(false);
+            isDoorOpen = false;
+        } else {
+            Serial.println("Light conditions changed - maintaining door position");
+        }
+    } 
+    else {
+        Serial.println("No action needed - maintaining door position");
+    }
+    
+    // Wait before next reading
+    delay(SENSOR_READ_DELAY);
 }
 
-// Wind The Door Down
-void lowerDoor()
-{
-    digitalWrite(DoorDownMotorPin, HIGH);
-    digitalWrite(DoorUpMotorPin, LOW);
-    Serial.println("Door Lowering");
-    delay(12000);
+/**
+ * Operates the door (open or close)
+ * @param raise true to raise the door, false to lower it
+ */
+void operateDoor(bool raise) {
+    if (raise) {
+        digitalWrite(DOOR_UP_MOTOR_PIN, HIGH);
+        digitalWrite(DOOR_DOWN_MOTOR_PIN, LOW);
+        Serial.println("Door raising...");
+        delay(DOOR_MOVEMENT_DELAY - 100);  // Slight adjustment for raising
+    } else {
+        digitalWrite(DOOR_DOWN_MOTOR_PIN, HIGH);
+        digitalWrite(DOOR_UP_MOTOR_PIN, LOW);
+        Serial.println("Door lowering...");
+        delay(DOOR_MOVEMENT_DELAY);
+    }
+    
+    // Stop door after movement completes
+    stopDoor();
 }
 
-void stopDoor()
-{
-    digitalWrite(DoorUpMotorPin, LOW);
-    digitalWrite(DoorDownMotorPin, LOW);
-    Serial.println("Door Stop");
+/**
+ * Stops the door movement
+ */
+void stopDoor() {
+    digitalWrite(DOOR_UP_MOTOR_PIN, LOW);
+    digitalWrite(DOOR_DOWN_MOTOR_PIN, LOW);
+    Serial.println("Door stopped");
 }

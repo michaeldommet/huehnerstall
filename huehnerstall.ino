@@ -72,7 +72,12 @@ void setup() {
     display.setCursor(0, 16);
     display.println(F("Status: Ready"));
     display.setCursor(0, 32);
-    display.println(F("Door: ") + String(isDoorOpen ? "Open" : "Closed"));
+    display.print(F("Door: "));
+    if (isDoorOpen) {
+        display.println(F("Open"));
+    } else {
+        display.println(F("Closed"));
+    }
     display.display();
     
     Serial.println("Door control system initialized");
@@ -173,7 +178,11 @@ void updateDisplay(int brightness) {
     // Door status
     display.setCursor(0, 54);
     display.print(F("Door: "));
-    display.println(isDoorOpen ? F("Open") : F("Closed"));
+    if (isDoorOpen) {
+        display.println(F("Open"));
+    } else {
+        display.println(F("Closed"));
+    }
     
     display.display();
 }

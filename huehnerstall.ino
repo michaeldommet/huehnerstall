@@ -19,16 +19,24 @@ bool bmeInitialized = false;
 const int DOOR_DOWN_MOTOR_PIN = 2;    // Wind motor down
 const int DOOR_UP_MOTOR_PIN = 3;      // Wind motor up
 const int LIGHT_SENSOR_PIN = A1;      // Light sensor pin
+const int BUTTON_OPEN_PIN = 4;        // Manual Open Button
+const int BUTTON_CLOSE_PIN = 5;       // Manual Close Button
 const int BRIGHTNESS_HIGH_THRESHOLD = 400;  // Threshold for raising door
 const int BRIGHTNESS_LOW_THRESHOLD = 100;   // Threshold for lowering door
 const int DOOR_MOVEMENT_DELAY = 11000;      // Time required for door movement
 const int SENSOR_READ_DELAY = 2000;         // Delay between sensor readings
 const int DISPLAY_REFRESH_INTERVAL = 5000;  // Refresh display every 5 seconds
 const int SERIAL_BAUD_RATE = 9600;          // Serial communication speed
+const int BUTTON_DEBOUNCE_DELAY = 50;       // Debounce delay in milliseconds
 
 // Door state tracking
 bool isDoorOpen = true;
 unsigned long lastDisplayUpdate = 0;
+unsigned long lastButtonCheckTime = 0;
+
+// Button state variables
+bool openButtonPressed = false;
+bool closeButtonPressed = false;
 
 void setup() {
     // Initialize serial communication
@@ -38,6 +46,10 @@ void setup() {
     // Set pin modes
     pinMode(DOOR_UP_MOTOR_PIN, OUTPUT);
     pinMode(DOOR_DOWN_MOTOR_PIN, OUTPUT);
+    
+    // Set up button pins with internal pull-up resistors
+    pinMode(BUTTON_OPEN_PIN, INPUT_PULLUP);
+    pinMode(BUTTON_CLOSE_PIN, INPUT_PULLUP);
     
     // Ensure door is stopped at startup
     stopDoor();
@@ -90,71 +102,118 @@ void setup() {
 }
 
 void loop() {
-    // Read sensor data
-    int brightness = analogRead(LIGHT_SENSOR_PIN);
+    // Check for button presses first (highest priority)
+    checkButtonOverrides();
     
-    // Read BME280 sensor if available
-    if (bmeInitialized) {
-        temperature = bme.readTemperature();  // Celsius
-        humidity = bme.readHumidity();        // %
-        pressure = bme.readPressure() / 100.0F; // hPa
+    // Only proceed with automatic control if no button is being pressed
+    if (!openButtonPressed && !closeButtonPressed) {
+        // Read sensor data
+        int brightness = analogRead(LIGHT_SENSOR_PIN);
         
-        Serial.print(F("Temperature: "));
-        Serial.print(temperature);
-        Serial.print(F("°C, Humidity: "));
-        Serial.print(humidity);
-        Serial.print(F("%, Pressure: "));
-        Serial.print(pressure);
-        Serial.println(F(" hPa"));
+        // Read BME280 sensor if available
+        if (bmeInitialized) {
+            temperature = bme.readTemperature();  // Celsius
+            humidity = bme.readHumidity();        // %
+            pressure = bme.readPressure() / 100.0F; // hPa
+            
+            Serial.print(F("Temperature: "));
+            Serial.print(temperature);
+            Serial.print(F("°C, Humidity: "));
+            Serial.print(humidity);
+            Serial.print(F("%, Pressure: "));
+            Serial.print(pressure);
+            Serial.println(F(" hPa"));
+        }
+        
+        Serial.print(F("Current brightness: "));
+        Serial.println(brightness);
+        
+        // Update display periodically
+        unsigned long currentMillis = millis();
+        if (currentMillis - lastDisplayUpdate >= DISPLAY_REFRESH_INTERVAL) {
+            updateDisplay(brightness);
+            lastDisplayUpdate = currentMillis;
+        }
+        
+        // Check if door needs to be opened (bright and door is closed)
+        if (brightness > BRIGHTNESS_HIGH_THRESHOLD && !isDoorOpen) {
+            Serial.println(F("Bright conditions detected - opening door"));
+            updateDoorStatusOnDisplay(F("Opening..."));
+            operateDoor(true);
+            isDoorOpen = true;
+            updateDoorStatusOnDisplay(F("Open"));
+        } 
+        // Check if door needs to be closed (dark and door is open)
+        else if (brightness < BRIGHTNESS_LOW_THRESHOLD && isDoorOpen) {
+            Serial.println(F("Low light conditions detected - confirming reading..."));
+            updateDoorStatusOnDisplay(F("Checking..."));
+            delay(SENSOR_READ_DELAY);  // Double-check before closing
+            
+            // Read brightness again to confirm it's still dark
+            brightness = analogRead(LIGHT_SENSOR_PIN);
+            if (brightness < BRIGHTNESS_LOW_THRESHOLD) {
+                Serial.println(F("Confirmed low light - closing door"));
+                updateDoorStatusOnDisplay(F("Closing..."));
+                operateDoor(false);
+                isDoorOpen = false;
+                updateDoorStatusOnDisplay(F("Closed"));
+            } else {
+                Serial.println(F("Light conditions changed - maintaining door position"));
+                if (isDoorOpen) {
+                    updateDoorStatusOnDisplay(F("Open"));
+                } else {
+                    updateDoorStatusOnDisplay(F("Closed"));
+                }
+            }
+        } 
+        else {
+            Serial.println(F("No action needed - maintaining door position"));
+        }
+        
+        // Wait before next reading
+        delay(SENSOR_READ_DELAY);
     }
+}
+
+/**
+ * Check and handle manual override button presses
+ */
+void checkButtonOverrides() {
+    // Read button states (LOW when pressed because of pull-up resistors)
+    bool openButtonState = !digitalRead(BUTTON_OPEN_PIN);  // Inverted because of pull-up
+    bool closeButtonState = !digitalRead(BUTTON_CLOSE_PIN); // Inverted because of pull-up
     
-    Serial.print(F("Current brightness: "));
-    Serial.println(brightness);
-    
-    // Update display periodically
-    unsigned long currentMillis = millis();
-    if (currentMillis - lastDisplayUpdate >= DISPLAY_REFRESH_INTERVAL) {
-        updateDisplay(brightness);
-        lastDisplayUpdate = currentMillis;
+    // Debounce the buttons
+    if (millis() - lastButtonCheckTime < BUTTON_DEBOUNCE_DELAY) {
+        return;
     }
+    lastButtonCheckTime = millis();
     
-    // Check if door needs to be opened (bright and door is closed)
-    if (brightness > BRIGHTNESS_HIGH_THRESHOLD && !isDoorOpen) {
-        Serial.println(F("Bright conditions detected - opening door"));
-        updateDoorStatusOnDisplay(F("Opening..."));
+    // Handle open button press
+    if (openButtonState && !openButtonPressed) {
+        Serial.println(F("Manual override: Opening door"));
+        openButtonPressed = true;
+        updateDoorStatusOnDisplay(F("Manual opening..."));
         operateDoor(true);
         isDoorOpen = true;
-        updateDoorStatusOnDisplay(F("Open"));
-    } 
-    // Check if door needs to be closed (dark and door is open)
-    else if (brightness < BRIGHTNESS_LOW_THRESHOLD && isDoorOpen) {
-        Serial.println(F("Low light conditions detected - confirming reading..."));
-        updateDoorStatusOnDisplay(F("Checking..."));
-        delay(SENSOR_READ_DELAY);  // Double-check before closing
-        
-        // Read brightness again to confirm it's still dark
-        brightness = analogRead(LIGHT_SENSOR_PIN);
-        if (brightness < BRIGHTNESS_LOW_THRESHOLD) {
-            Serial.println(F("Confirmed low light - closing door"));
-            updateDoorStatusOnDisplay(F("Closing..."));
-            operateDoor(false);
-            isDoorOpen = false;
-            updateDoorStatusOnDisplay(F("Closed"));
-        } else {
-            Serial.println(F("Light conditions changed - maintaining door position"));
-            if (isDoorOpen) {
-                updateDoorStatusOnDisplay(F("Open"));
-            } else {
-                updateDoorStatusOnDisplay(F("Closed"));
-            }
-        }
-    } 
-    else {
-        Serial.println(F("No action needed - maintaining door position"));
+        updateDoorStatusOnDisplay(F("Open (Manual)"));
+        updateDisplay(analogRead(LIGHT_SENSOR_PIN));
+    } else if (!openButtonState) {
+        openButtonPressed = false;
     }
     
-    // Wait before next reading
-    delay(SENSOR_READ_DELAY);
+    // Handle close button press
+    if (closeButtonState && !closeButtonPressed) {
+        Serial.println(F("Manual override: Closing door"));
+        closeButtonPressed = true;
+        updateDoorStatusOnDisplay(F("Manual closing..."));
+        operateDoor(false);
+        isDoorOpen = false;
+        updateDoorStatusOnDisplay(F("Closed (Manual)"));
+        updateDisplay(analogRead(LIGHT_SENSOR_PIN));
+    } else if (!closeButtonState) {
+        closeButtonPressed = false;
+    }
 }
 
 /**

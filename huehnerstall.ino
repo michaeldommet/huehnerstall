@@ -6,7 +6,7 @@ const int DOOR_UP_MOTOR_PIN = 3;      // Wind motor up
 const int LIGHT_SENSOR_PIN = A1;      // Light sensor pin
 const int BRIGHTNESS_HIGH_THRESHOLD = 400;  // Threshold for raising door
 const int BRIGHTNESS_LOW_THRESHOLD = 100;   // Threshold for lowering door
-const int DOOR_MOVEMENT_DELAY = 12000;      // Time required for door movement
+const int DOOR_MOVEMENT_DELAY = 13000;      // Time required for door movement
 const int SENSOR_READ_DELAY = 2000;         // Delay between sensor readings
 const int SERIAL_BAUD_RATE = 9600;          // Serial communication speed
 
@@ -71,7 +71,7 @@ void operateDoor(bool raise) {
         digitalWrite(DOOR_UP_MOTOR_PIN, HIGH);
         digitalWrite(DOOR_DOWN_MOTOR_PIN, LOW);
         Serial.println("Door raising...");
-        delay(DOOR_MOVEMENT_DELAY - 100);  // Slight adjustment for raising
+        delay(DOOR_MOVEMENT_DELAY);  // You Can Slight adjustment for raising
     } else {
         digitalWrite(DOOR_DOWN_MOTOR_PIN, HIGH);
         digitalWrite(DOOR_UP_MOTOR_PIN, LOW);
